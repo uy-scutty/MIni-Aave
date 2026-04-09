@@ -9,7 +9,7 @@ contract MiniAave is MiniAaveStorage {
         logic.depositLogic(
             _reserves,
             _reservesList,
-            _userConfig,
+            _userConfig, // in the main protocol code is like _userConfig[onBehalfOf]
             Data.DepositParameters({asset: asset, amount: amount, onBehalfOf: onBehalfOf})
         );
     }

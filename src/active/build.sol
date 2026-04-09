@@ -2,9 +2,17 @@
 pragma solidity 0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract build {
+contract MyMiniAave {
     mapping(address => uint256) userBalance;
+
+    mapping(address => uint256) userDebt;
     uint256 public totalDeposited;
+
+    IERC20 immutable token;
+
+    constructor(address _token) {
+        token = _token;
+    }
 
     error cannotDepositZero();
     error depositFailed();
@@ -19,7 +27,7 @@ contract build {
         if (amount == 0) {
             revert cannotDepositZero();
         }
-        IERC20(asset).approve(address(this), amount);
+
         bool success = IERC20(asset).transferFrom(msg.sender, address(this), amount);
         if (!success) {
             revert depositFailed();
