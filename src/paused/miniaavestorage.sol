@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
-import {Data} from "src/Data.sol";
+import {Data} from "src/paused/Data.sol";
 
 contract MiniAaveStorage {
     mapping(address => Data.ReserveData) internal _reserves;

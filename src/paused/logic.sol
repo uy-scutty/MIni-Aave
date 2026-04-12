@@ -1,7 +1,7 @@
 // SPDX-License-Identifier:MIT
 pragma solidity 0.8.30;
 
-import {Data} from "src/Data.sol";
+import {Data} from "src/paused/Data.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 library logic {
@@ -17,8 +17,8 @@ library logic {
     // notice fot this deposit function i am reading directly from storage that means higher gascost
     function depositLogic(
         mapping(address => Data.ReserveData) storage reserveData,
-        // mapping(uint256 => mapping(address => Data.ReserveData)) storage reserveList,
-        // mapping(address => Data.UserConfiguration) storage userConfig,
+        mapping(uint256 => mapping(address => Data.ReserveData)) storage reserveList,
+        mapping(address => Data.UserConfiguration) storage userConfig,
         Data.DepositParameters memory param
     ) internal {
         Data.ReserveData storage reserve = reserveData[param.asset];
