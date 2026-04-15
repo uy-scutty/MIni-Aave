@@ -5,117 +5,181 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {AToken} from "src/active/myTokens/aToken.sol";
 import {DebtToken} from "src/active/myTokens/debtToken.sol";
 
-/// tomi think you want to do something that if the amount being repayed is greater than the userDebt of then the excess play amount should flow to the totaldeposited
-contract MyMiniAave {
-    mapping(address => uint256) userBalance;
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-    mapping(address => uint256) userDebt;
-    // or instead address(this) it should be like uint256 but then wo but this just mapp what every user deposited to the conntract kini sha
-    // i thinking there should be something mapping (address(this) => mapping(address => uint256) userBalance ) totalDeposited;
-    // and do this for debt too
+contract MyMiniAave is ReentrancyGuard {
+    using SafeERC20 for IERC20;
 
-    uint256 public totalDeposited;
-    uint256 public totalDebt;
+    mapping(address => Reserve) reserves;
+    mapping(address => mapping(address => uint256)) userBalance;
+    mapping(address => mapping(address => uint256)) userDebt;
 
-    AToken public aToken;
-    DebtToken public debtToken;
-
-    // ERC20 immutable token;
-
-    // DO I NEED TO TRACK TOKEN BALANCE OR THAT IS DONE BY THE TOKEN CONTRACT
-    constructor(address _aToken, address _debtToken) {
-        aToken = AToken(_aToken);
-        debtToken = DebtToken(_debtToken);
+    struct Reserve {
+        uint256 totalDeposited;
+        uint256 totalDebt;
+        address aToken;
+        address debtToken;
+        bool isInitialized;
+        uint256 ltv;
+        uint256 totalBorrowed;
     }
-    // mapping(address _token => uint256 ) amount of token mintetd
+
     error cannotDepositZero();
-    error depositFailed();
     error insufficientbalance();
-    error withdrawalFailed();
-    error CannotBorrowZero();
-    error BorrowNotSuccessful();
+    error ZeroAmount();
     error CannotRepayNothing();
-    error CannotPayMoreThanOwe();
+    error BorrowLimitReached();
+    error InvalidLtv();
+    error ReserveAlreadyInitialized();
+    error ReserveNotInitialized();
+    error InvalidAsset();
+    error InvalidAToken();
+    error InvalidDebtToken();
 
-    event deposited(address indexed user, uint256 indexed amount);
-    event withdrawed(address indexed user, uint256 indexed amount);
+    event deposited(address indexed user, address indexed asset, uint256 indexed amount);
+    event withdrawn(address indexed user, address indexed asset, uint256 indexed amount);
+    event borrowed(address indexed user, address indexed asset, uint256 amount);
+    event repayed(address indexed user, address indexed asset, uint256 amount);
 
-    function deposit(uint256 amount, address asset) public returns (bool) {
-        // uint256 userInitialBalance = userBalance[msg.sender];
+    function deposit(uint256 amount, address asset) public nonReentrant {
+        _requireInitialized(asset);
+        Reserve storage reserve = reserves[asset];
+
         if (amount == 0) {
-            revert cannotDepositZero();
+            revert ZeroAmount();
         }
 
-        bool success = IERC20(asset).transferFrom(msg.sender, address(this), amount);
-        if (!success) {
-            revert withdrawalFailed();
-        }
-        aToken.mint(msg.sender, amount);
-        userBalance[msg.sender] += amount;
-        // ERC20(token).mint(msg.sender, amount); // not sure
+        IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
+        reserve.totalDeposited += amount;
+        userBalance[msg.sender][asset] += amount;
 
-        totalDeposited += amount;
-        emit deposited(msg.sender, amount);
-        return success;
+        AToken(reserve.aToken).mint(msg.sender, amount);
+        emit deposited(msg.sender, asset, amount);
     }
 
-    function withdraw(uint256 amount, address asset) public returns (bool) {
-        // uint256 userInitialBalance = userBalance[msg.sender];
-        if (userBalance[msg.sender] < amount) {
+    function withdraw(uint256 amount, address asset) public nonReentrant {
+        _requireInitialized(asset);
+        if (amount == 0) revert ZeroAmount();
+
+        Reserve storage reserve = reserves[asset];
+
+        uint256 availableLiquidity = reserve.totalDeposited - reserve.totalBorrowed;
+        if (availableLiquidity < amount) {
             revert insufficientbalance();
         }
-        bool success = IERC20(asset).transfer(msg.sender, amount);
-        if (!success) {
-            revert withdrawalFailed();
-        }
-        aToken.burn(msg.sender, amount);
-        // ERC20(token).burn(msg.sender, amount); // not sure  YOU ARE SUPPOSE TO BURN THE MINTED TOKEN  edited now it is asking whoose person TOKEN BALANCR AM I MINTING
-        userBalance[msg.sender] -= amount;
-        totalDeposited -= amount;
 
-        emit withdrawed(msg.sender, amount);
-        return success;
-    }
-
-    function borrow(address asset, uint256 amount) public {
-        if (amount == 0) {
-            revert CannotBorrowZero();
-        }
-
-        if (userBalance[msg.sender] < amount) {
+        if (userBalance[msg.sender][asset] < amount) {
             revert insufficientbalance();
         }
-        bool success = IERC20(asset).transfer(msg.sender, amount);
-        if (!success) {
-            revert BorrowNotSuccessful();
-        }
-        debtToken.mint(msg.sender, amount);
-        totalDebt += amount;
-        totalDeposited -= amount;
-        userBalance[msg.sender] -= amount;
-        userDebt[msg.sender] += amount;
+
+        userBalance[msg.sender][asset] -= amount;
+        reserve.totalDeposited -= amount;
+
+        IERC20(asset).safeTransfer(msg.sender, amount);
+
+        AToken(reserve.aToken).burn(msg.sender, amount);
+
+        emit withdrawn(msg.sender, asset, amount);
     }
 
-    function repay(address asset, uint256 amount) public {
+    function borrow(address asset, uint256 amount) public nonReentrant {
+        _requireInitialized(asset);
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+
+        Reserve storage reserve = reserves[asset];
+
+        uint256 availableLiquidity = reserve.totalDeposited - reserve.totalBorrowed;
+        if (availableLiquidity < amount) {
+            revert insufficientbalance();
+        }
+        uint256 maxBorrow = (userBalance[msg.sender][asset] * reserve.ltv) / 10000;
+        if (userDebt[msg.sender][asset] + amount > maxBorrow) {
+            revert BorrowLimitReached();
+        }
+
+        userDebt[msg.sender][asset] += amount;
+        reserve.totalBorrowed += amount;
+
+        IERC20(asset).safeTransfer(msg.sender, amount);
+        DebtToken(reserve.debtToken).mint(msg.sender, amount);
+
+        emit borrowed(msg.sender, asset, amount);
+    }
+
+    function repay(address asset, uint256 amount) public nonReentrant {
+        _requireInitialized(asset);
         if (amount == 0) {
             revert CannotRepayNothing();
         }
-        // so remeber you ideaa this just a jam
-        if (amount > userDebt[msg.sender]) {
-            revert CannotPayMoreThanOwe();
-        }
-        IERC20(asset).transferFrom(msg.sender, address(this), amount);
+        Reserve storage reserve = reserves[asset];
 
-        debtToken.burn(msg.sender, amount);
-        
-        // totalDeposited -= amount; // we are going to ADD SOMETHING LIKE THIS TO FLOW TO TOTALDEPOSITED
-        // userBalance[msg.sender] -= amount;  BOTH LINES
-        totalDebt -= amount; // WHAT IS THE CORREECT OTHER FOR THIS
-        userDebt[msg.sender] -= amount;
+        uint256 debt = userDebt[msg.sender][asset];
+        uint256 payAmount = amount > debt ? debt : amount;
+        uint256 excess = amount > debt ? amount - debt : 0;
+
+        IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
+
+        userDebt[msg.sender][asset] -= payAmount;
+        reserve.totalBorrowed -= payAmount;
+
+        DebtToken(reserve.debtToken).burn(msg.sender, payAmount);
+
+        if (excess > 0) {
+            reserve.totalDeposited += excess;
+            userBalance[msg.sender][asset] += excess;
+            AToken(reserve.aToken).mint(msg.sender, excess);
+        }
+
+        emit repayed(msg.sender, asset, amount);
     }
 
-    function getBalance(address user) public view returns (uint256) {
-        uint256 balanceOfUser = userBalance[user];
+    function getBalance(address user, address asset) public view returns (uint256) {
+        _requireInitialized(asset);
+
+        uint256 balanceOfUser = userBalance[user][asset];
         return balanceOfUser;
+    }
+
+    function initReserve(address asset, address _aToken, address _debtToken, uint256 _ltv) public {
+        Reserve storage reserve = reserves[asset];
+
+        if (reserve.isInitialized) {
+            revert ReserveAlreadyInitialized();
+        }
+        _validateReserve(asset, _aToken, _debtToken, _ltv);
+
+        reserves[asset] = Reserve({
+            totalDeposited: 0,
+            totalDebt: 0,
+            aToken: _aToken,
+            debtToken: _debtToken,
+            isInitialized: true,
+            ltv: _ltv,
+            totalBorrowed: 0
+        });
+    }
+
+    function _validateReserve(address asset, address _aToken, address _debtToken, uint256 _ltv) internal pure {
+        if (_ltv > 10000) {
+            revert InvalidLtv();
+        }
+        if (asset == address(0)) {
+            revert InvalidAsset();
+        }
+        if (_aToken == address(0)) {
+            revert InvalidAToken();
+        }
+        if (_debtToken == address(0)) {
+            revert InvalidDebtToken();
+        }
+    }
+
+    function _requireInitialized(address asset) internal view {
+        if (!reserves[asset].isInitialized) {
+            revert ReserveNotInitialized();
+        }
     }
 }
