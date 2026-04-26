@@ -250,7 +250,7 @@ contract MyMiniAave is ReentrancyGuard, Ownable {
             uint256 threshold = reserves[asset].liquidationThreshold;
             accruedCollateral += (value * threshold) / 10000;
         }
-        uint256 healthFactor = accruedCollateral / totalDebt_;
+        uint256 healthFactor = (accruedCollateral * 1e18) / totalDebt_;
         return healthFactor;
     }
 
@@ -285,7 +285,7 @@ contract MyMiniAave is ReentrancyGuard, Ownable {
         IERC20(debtAsset).safeTransferFrom(msg.sender, address(this), repayAmount);
 
         userDebt[user][debtAsset] -= repayAmount;
-        reserves[collateralAsset].totalBorrowed -= repayAmount;
+        reserves[debtAsset].totalBorrowed -= repayAmount;
 
         DebtToken(reserves[debtAsset].debtToken).burn(user, repayAmount);
 

@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
+
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract AToken is ERC20 {
-    error AToken___OnlyPoolContractCanMintOrBurnToken();
-    address public mainPool;
+    address public immutable mainPool;
 
-    constructor(uint256 initialSupply, address _mainPool) ERC20("aToken", "ATK") {
-        _mint(msg.sender, initialSupply);
-        mainPool = _mainPool;
-    }
-    modifier onlyCaller() {
-        if (msg.sender != mainPool) {
-            revert AToken___OnlyPoolContractCanMintOrBurnToken();
-            _;
-        }
+    error OnlyPool();
+
+    constructor(string memory name_, string memory symbol_, address pool_) ERC20(name_, symbol_) {
+        mainPool = pool_;
     }
 
-    function mint(address to, uint256 value) external onlyCaller {
-        _mint(to, value);
+    modifier onlyPool() {
+        if (msg.sender != mainPool) revert OnlyPool();
+        _;
     }
 
-    function burn(address from, uint256 value) external onlyCaller {
-        _burn(from, value);
+    function mint(address to, uint256 amount) external onlyPool {
+        _mint(to, amount);
+    }
+
+    function burn(address from, uint256 amount) external onlyPool {
+        _burn(from, amount);
     }
 }
