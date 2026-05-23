@@ -8,12 +8,12 @@ contract InitReserve is Script {
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
 
-        address miniAave = 0x5FbDB2315678afecb367f032d93F642f64180aa3;
+        address miniAave = vm.envAddress("CONTRACTADDRESS");
 
-        address asset = vm.envAddress("TOKEN");
-        address aToken = vm.envAddress("ATOKEN");
-        address debtToken = vm.envAddress("DEBTTOKEN");
-        address priceFeed = vm.envAddress("PRICEFEED");
+        address asset = vm.envAddress("BTC");
+        address aToken = vm.envAddress("aBTC");
+        address debtToken = vm.envAddress("dBTC");
+        address priceFeed = vm.envAddress("BTC_PRICEFEED");
 
         vm.startBroadcast(pk);
 

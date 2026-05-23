@@ -9,13 +9,13 @@ contract DeployTokens is Script {
     function run() external returns (address aTokenAddr, address debtTokenAddr) {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
-        address miniAave = 0x5FbDB2315678afecb367f032d93F642f64180aa3;
+        address miniAave = vm.envAddress("CONTRACTADDRESS");
 
         vm.startBroadcast(deployerPrivateKey);
 
-        AToken aToken = new AToken("AToken", "aTT", miniAave);
+        AToken aToken = new AToken("Aave BTC", "aBTC", miniAave);
 
-        DebtToken debtToken = new DebtToken("DebtToken", "dTT", miniAave);
+        DebtToken debtToken = new DebtToken("Debt BTC", "dBTC", miniAave);
 
         vm.stopBroadcast();
 

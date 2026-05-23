@@ -5,16 +5,18 @@ import {Script} from "forge-std/Script.sol";
 import {MockV3Aggregator} from "src/mocks/MockV3Aggregator.sol";
 
 contract DeployMockPriceFeed is Script {
-    function run() external returns (MockV3Aggregator) {
+    function run() external returns (address) {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
+
+        uint8 decimals = uint8(vm.envUint("PRICE_DECIMALS"));
+        int256 initialPrice = int256(vm.envUint("BTC_INITIAL_PRICE"));
 
         vm.startBroadcast(deployerKey);
 
-        // Example ETH/USD price = 2000 * 1e8
-        MockV3Aggregator priceFeed = new MockV3Aggregator(8, 2000e8);
+        MockV3Aggregator priceFeed = new MockV3Aggregator(decimals, initialPrice);
 
         vm.stopBroadcast();
 
-        return priceFeed;
+        return address(priceFeed);
     }
 }

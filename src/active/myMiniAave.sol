@@ -140,7 +140,7 @@ contract MyMiniAave is ReentrancyGuard, Ownable {
         Reserve storage reserve = reserves[asset];
 
         uint256 debt = userDebt[msg.sender][asset];
-        // i do not understand this
+
         uint256 payAmount = amount > debt ? debt : amount;
         uint256 excess = amount > debt ? amount - debt : 0;
 
