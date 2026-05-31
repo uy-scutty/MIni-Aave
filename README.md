@@ -324,7 +324,7 @@ Creates a new reserve and configures:
 Clone repository:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/uy-scutty/MIni-Aave/tree/main
 ```
 
 Install dependencies:
